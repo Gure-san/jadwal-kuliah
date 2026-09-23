@@ -141,10 +141,12 @@
 </head>
 <body>
 <main>
-  <p class="intro">Klik teks mana saja di kartu untuk mengubahnya. Kalau sudah pas, tekan <b>Simpan sebagai gambar</b>. Perubahan tersimpan otomatis di browser ini.</p>
+  <p class="intro">Klik teks mana saja di kartu untuk mengubahnya. Kalau sudah pas, tekan <b>Simpan sebagai gambar</b> — gambar dan file data (.json) akan terunduh sekaligus. Lain kali mau update, tekan <b>Impor data</b> lalu pilih file .json itu supaya tidak mulai dari awal. Perubahan juga tersimpan otomatis di browser ini.</p>
   <div class="toolbar">
     <button class="btn primary" id="save">Simpan sebagai gambar</button>
     <button class="btn" id="addDay">Tambah hari</button>
+    <button class="btn" id="importData">Impor data</button>
+    <input type="file" id="importFile" accept="application/json,.json" style="display:none">
     <button class="btn" id="reset">Kembalikan ke awal</button>
   </div>
 
@@ -174,7 +176,7 @@
 
   function defaults() {
     return {
-      title: "Jadwal Kuliah",
+      title: "Jadwal Kuliah Semester 3",
       days: [
         { d: "Senin", c: 0, r: [
           { t: "08:20 - 09:00 WIB", n: "Expository and Persuasive Writing", p: "Lab Bahasa dan Komputer" },
@@ -328,6 +330,31 @@
     });
   }
 
+  function downloadJSON(obj, filename) {
+    try {
+      var blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function isValidState(s) {
+    return !!s && typeof s === "object" && typeof s.title === "string" && Array.isArray(s.days) &&
+      s.days.every(function (d) {
+        return d && typeof d.d === "string" && typeof d.c === "number" && Array.isArray(d.r) &&
+          d.r.every(function (row) {
+            return row && typeof row.t === "string" && typeof row.n === "string" && typeof row.p === "string";
+          });
+      });
+  }
+
   var toastTimer = null;
   function toast(msg) {
     var t = $("#toast");
@@ -366,9 +393,11 @@
       var blob = await new Promise(function (res) { canvas.toBlob(res, "image/png"); });
       var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      var dataSaved = downloadJSON(state, "jadwal-kuliah-data.json");
       if (!blob || isIOS) {
         // iOS Safari sering menolak unduhan otomatis, jadi tampilkan gambarnya untuk ditahan lama
         showOverlay(canvas.toDataURL("image/png"));
+        toast(dataSaved ? "Data jadwal diunduh. Tahan gambar untuk menyimpannya." : "Tahan gambar untuk menyimpannya.");
       } else {
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
@@ -378,7 +407,7 @@
         a.click();
         a.remove();
         setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-        toast("Gambar diunduh (cek folder Download)");
+        toast(dataSaved ? "Gambar & data diunduh (cek folder Download)" : "Gambar diunduh (cek folder Download)");
       }
     } catch (e) {
       toast("Gagal membuat gambar. Coba lagi.");
@@ -396,6 +425,29 @@
     persist(); render();
     var el = document.querySelector(".day:last-child .dname");
     if (el) { el.focus(); el.scrollIntoView({ block: "center" }); }
+  });
+
+  $("#importData").addEventListener("click", function () {
+    $("#importFile").click();
+  });
+  $("#importFile").addEventListener("change", function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = JSON.parse(reader.result);
+        if (!isValidState(parsed)) throw new Error("format tidak valid");
+        state = parsed;
+        persist(); render();
+        toast("Data jadwal berhasil dimuat");
+      } catch (err) {
+        toast("Gagal memuat data. Pastikan file .json sesuai format ekspor.");
+      }
+    };
+    reader.onerror = function () { toast("Gagal membaca file."); };
+    reader.readAsText(file);
+    e.target.value = "";
   });
 
   var resetBtn = $("#reset");
